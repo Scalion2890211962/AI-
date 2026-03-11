@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>梯度下降 + 反向传播 可视化</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #f5f5f5;
+            margin: 20px;
+        }
+        #canvas {
+            border: 2px solid #333;
+            background-color: white;
+        }
+        .controls {
+            margin: 20px 0;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        button {
+            padding: 8px 16px;
+            font-size: 14px;
+            cursor: pointer;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        input {
+            width: 80px;
+            padding: 8px;
+        }
+        .info {
+            font-size: 16px;
+            margin-top: 10px;
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+    <h1>反向传播 - 梯度下降优化可视化</h1>
+    <div class="controls">
+        <label>初始值 x：</label>
+        <input type="number" id="initX" value="-6" step="0.5">
+        <label>学习率：</label>
+        <input type="number" id="lr" value="0.1" step="0.01">
+        <button id="startBtn">开始梯度下降</button>
+        <button id="resetBtn">重置</button>
+    </div>
+    <canvas id="canvas" width="800" height="500"></canvas>
+    <div class="info">
+        当前 x: <span id="currentX">0</span> | 当前损失: <span id="currentLoss">0</span> | 迭代次数: <span id="iterCount">0</span>
+    </div>
+
+    <script>
+        // 获取DOM元素
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const startBtn = document.getElementById('startBtn');
+        const resetBtn = document.getElementById('resetBtn');
+        const initXInput = document.getElementById('initX');
+        const lrInput = document.getElementById('lr');
+        const currentXSpan = document.getElementById('currentX');
+        const currentLossSpan = document.getElementById('currentLoss');
+        const iterCountSpan = document.getElementById('iterCount');
+
+        // 画布坐标系转换（将数学坐标系映射到Canvas像素）
+        const CANVAS_WIDTH = 800;
+        const CANVAS_HEIGHT = 500;
+        const X_RANGE = [-10, 10]; // x轴显示范围
+        const Y_RANGE = [0, 50];   // y轴显示范围
+        const SCALE_X = CANVAS_WIDTH / (X_RANGE[1] - X_RANGE[0]);
+        const SCALE_Y = CANVAS_HEIGHT / (Y_RANGE[1] - Y_RANGE[0]);
+
+        // 状态变量
+        let currentX = parseFloat(initXInput.value);
+        let learningRate = parseFloat(lrInput.value);
+        let iteration = 0;
+        let animationId = null; // 动画帧ID
+
+        // 1. 定义损失函数 y = x² + 2x + 5（最小值在x=-1处）
+        function lossFunction(x) {
+            return x * x + 2 * x + 5;
+        }
+
+        // 2. 反向传播计算梯度（损失函数对x的导数：2x + 2）
+        function computeGradient(x) {
+            return 2 * x + 2; // 导数就是梯度（单变量）
+        }
+
+        // 3. 梯度下降更新参数：x = x - 学习率 * 梯度
+        function gradientDescentStep() {
+            const gradient = computeGradient(currentX);
+            currentX = currentX - learningRate * gradient; // 核心更新公式
+            iteration++;
+            
+            // 更新显示信息
+            currentXSpan.textContent = currentX.toFixed(4);
+            currentLossSpan.textContent = lossFunction(currentX).toFixed(4);
+            iterCountSpan.textContent = iteration;
+
+            // 当梯度足够小时停止（接近最小值）
+            if (Math.abs(gradient) < 0.001) {
+                cancelAnimationFrame(animationId);
+                alert(`已收敛！最终x=${currentX.toFixed(4)}, 损失=${lossFunction(currentX).toFixed(4)}, 迭代次数=${iteration}`);
+                return false;
+            }
+            return true;
+        }
+
+        // 4. 坐标系转换：数学坐标 → Canvas像素坐标
+        function toCanvasX(x) {
+            return (x - X_RANGE[0]) * SCALE_X;
+        }
+        function toCanvasY(y) {
+            return CANVAS_HEIGHT - (y - Y_RANGE[0]) * SCALE_Y; // y轴翻转（Canvas原点在左上角）
+        }
+
+        // 5. 绘制函数曲线和当前位置
+        function draw() {
+            // 清空画布
+            ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+            
+            // 绘制网格
+            drawGrid();
+            
+            // 绘制损失函数曲线
+            drawFunctionCurve();
+            
+            // 绘制当前点
+            drawCurrentPoint();
+            
+            // 绘制最小值标记
+            drawMinPoint();
+        }
+
+        // 绘制网格
+        function drawGrid() {
+            ctx.strokeStyle = '#eee';
+            ctx.lineWidth = 1;
+
+            // 绘制x轴网格线
+            for (let y = 0; y <= Y_RANGE[1]; y += 5) {
+                ctx.beginPath();
+                ctx.moveTo(0, toCanvasY(y));
+                ctx.lineTo(CANVAS_WIDTH, toCanvasY(y));
+                ctx.stroke();
+            }
+
+            // 绘制y轴网格线
+            for (let x = X_RANGE[0]; x <= X_RANGE[1]; x += 1) {
+                ctx.beginPath();
+                ctx.moveTo(toCanvasX(x), 0);
+                ctx.lineTo(toCanvasX(x), CANVAS_HEIGHT);
+                ctx.stroke();
+            }
+
+            // 绘制坐标轴
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 2;
+            // x轴
+            ctx.beginPath();
+            ctx.moveTo(0, toCanvasY(0));
+            ctx.lineTo(CANVAS_WIDTH, toCanvasY(0));
+            ctx.stroke();
+            // y轴
+            ctx.beginPath();
+            ctx.moveTo(toCanvasX(0), 0);
+            ctx.lineTo(toCanvasX(0), CANVAS_HEIGHT);
+            ctx.stroke();
+        }
+
+        // 绘制损失函数曲线
+        function drawFunctionCurve() {
+            ctx.strokeStyle = '#2196F3';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            
+            // 逐点绘制曲线
+            for (let x = X_RANGE[0]; x <= X_RANGE[1]; x += 0.1) {
+                const y = lossFunction(x);
+                if (x === X_RANGE[0]) {
+                    ctx.moveTo(toCanvasX(x), toCanvasY(y));
+                } else {
+                    ctx.lineTo(toCanvasX(x), toCanvasY(y));
+                }
+            }
+            ctx.stroke();
+        }
+
+        // 绘制当前参数位置
+        function drawCurrentPoint() {
+            const y = lossFunction(currentX);
+            const canvasX = toCanvasX(currentX);
+            const canvasY = toCanvasY(y);
+
+            // 绘制点
+            ctx.fillStyle = '#F44336';
+            ctx.beginPath();
+            ctx.arc(canvasX, canvasY, 6, 0, Math.PI * 2);
+            ctx.fill();
+
+            // 绘制点到x轴的垂线
+            ctx.strokeStyle = '#F44336';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([5, 5]); // 虚线
+            ctx.beginPath();
+            ctx.moveTo(canvasX, canvasY);
+            ctx.lineTo(canvasX, toCanvasY(0));
+            ctx.stroke();
+            ctx.setLineDash([]); // 恢复实线
+        }
+
+        // 绘制最小值标记（x=-1）
+        function drawMinPoint() {
+            const minX = -1;
+            const minY = lossFunction(minX);
+            const canvasX = toCanvasX(minX);
+            const canvasY = toCanvasY(minY);
+
+            // 绘制最小值点
+            ctx.fillStyle = '#4CAF50';
+            ctx.beginPath();
+            ctx.arc(canvasX, canvasY, 8, 0, Math.PI * 2);
+            ctx.fill();
+
+            // 标注最小值
+            ctx.fillStyle = '#4CAF50';
+            ctx.font = '14px Arial';
+            ctx.fillText(`最小值 (${minX}, ${minY})`, canvasX + 10, canvasY - 10);
+        }
+
+        // 开始梯度下降动画
+        function startGradientDescent() {
+            // 停止之前的动画
+            if (animationId) cancelAnimationFrame(animationId);
+            
+            // 更新参数
+            currentX = parseFloat(initXInput.value);
+            learningRate = parseFloat(lrInput.value);
+            iteration = 0;
+            currentXSpan.textContent = currentX.toFixed(4);
+            currentLossSpan.textContent = lossFunction(currentX).toFixed(4);
+            iterCountSpan.textContent = iteration;
+
+            // 动画循环
+            function animate() {
+                const continueStep = gradientDescentStep();
+                draw();
+                if (continueStep) {
+                    animationId = requestAnimationFrame(animate);
+                }
+            }
+            animate();
+        }
+
+        // 重置
+        function reset() {
+            if (animationId) cancelAnimationFrame(animationId);
+            currentX = -6;
+            learningRate = 0.1;
+            iteration = 0;
+            initXInput.value = -6;
+            lrInput.value = 0.1;
+            currentXSpan.textContent = currentX.toFixed(4);
+            currentLossSpan.textContent = lossFunction(currentX).toFixed(4);
+            iterCountSpan.textContent = iteration;
+            draw();
+        }
+
+        // 绑定事件
+        startBtn.addEventListener('click', startGradientDescent);
+        resetBtn.addEventListener('click', reset);
+
+        // 初始化绘制
+        draw();
+    </script>
+</body>
+</html>
