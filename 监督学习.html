@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>监督学习分类小游戏</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: Arial, sans-serif;
+        }
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            background-color: #f0f8ff;
+        }
+        #gameCanvas {
+            border: 2px solid #333;
+            background-color: white;
+            margin: 20px 0;
+        }
+        .control-panel {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        button {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            background-color: #4CAF50;
+            color: white;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        button:hover:not(:disabled) {
+            background-color: #45a049;
+        }
+        .status {
+            font-size: 16px;
+            margin: 10px 0;
+            color: #333;
+        }
+        .instructions {
+            max-width: 600px;
+            margin-bottom: 10px;
+            padding: 10px;
+            background-color: #e8f5e9;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <h1>监督学习分类小游戏</h1>
+    <div class="instructions">
+        <h3>游戏规则</h3>
+        <ol>
+            <li>点击「生成训练数据」：画布上出现随机大小/颜色的圆点（特征）</li>
+            <li>点击圆点选择，然后点击「标记为类别0」或「类别1」（手动标注标签）</li>
+            <li>标注至少5个点后，点击「训练算法」：逻辑回归学习你的分类规则</li>
+            <li>点击「生成测试数据」：算法自动预测新圆点的类别，显示准确率</li>
+        </ol>
+    </div>
+    <div class="control-panel">
+        <button id="generateTrainBtn">生成训练数据</button>
+        <button id="label0Btn" disabled>标记为类别0</button>
+        <button id="label1Btn" disabled>标记为类别1</button>
+        <button id="trainBtn" disabled>训练算法</button>
+        <button id="generateTestBtn" disabled>生成测试数据</button>
+        <button id="resetBtn">重置游戏</button>
+    </div>
+    <div class="status" id="statusText">准备就绪：点击「生成训练数据」开始</div>
+    <canvas id="gameCanvas" width="800" height="500"></canvas>
+
+    <script>
+        // 获取DOM元素
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const generateTrainBtn = document.getElementById('generateTrainBtn');
+        const label0Btn = document.getElementById('label0Btn');
+        const label1Btn = document.getElementById('label1Btn');
+        const trainBtn = document.getElementById('trainBtn');
+        const generateTestBtn = document.getElementById('generateTestBtn');
+        const resetBtn = document.getElementById('resetBtn');
+        const statusText = document.getElementById('statusText');
+
+        // 游戏状态变量
+        let trainPoints = []; // 训练数据点 [{x, y, size, color, label, selected}]
+        let testPoints = []; // 测试数据点
+        let selectedPointIndex = -1; // 选中的点索引
+        let model = null; // 训练后的模型（逻辑回归参数）
+        let isTrainingMode = true; // 是否处于训练模式
+
+        // 初始化画布
+        function initCanvas() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#f8f8f8';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+
+        // 生成随机数据点
+        function generateRandomPoints(count, isTrain = true) {
+            const points = [];
+            for (let i = 0; i < count; i++) {
+                const x = Math.random() * (canvas.width - 40) + 20;
+                const y = Math.random() * (canvas.height - 40) + 20;
+                const size = Math.random() * 30 + 10; // 特征1：大小（10-40）
+                const color = Math.random(); // 特征2：颜色（0-1，映射为RGB）
+                points.push({
+                    x, y, size, color,
+                    label: isTrain ? null : -1, // 训练点初始无标签，测试点初始-1
+                    selected: false
+                });
+            }
+            return points;
+        }
+
+        // 绘制所有点
+        function drawPoints() {
+            initCanvas(); // 清空画布
+
+            // 绘制训练点
+            trainPoints.forEach((point, index) => {
+                drawSinglePoint(point, index === selectedPointIndex, isTrainingMode);
+            });
+
+            // 绘制测试点（带预测标签）
+            testPoints.forEach(point => {
+                drawSinglePoint(point, false, false, true);
+            });
+        }
+
+        // 绘制单个点
+        function drawSinglePoint(point, isSelected, isTrain, isTest = false) {
+            ctx.beginPath();
+            ctx.arc(point.x, point.y, point.size, 0, Math.PI * 2);
+            
+            // 颜色映射：0→蓝色，1→红色，未标注→灰色，测试点预测错误→黄色
+            let fillColor;
+            if (isTest) {
+                fillColor = point.predictedLabel === point.actualLabel 
+                    ? (point.predictedLabel === 0 ? '#3498db' : '#e74c3c') 
+                    : '#f1c40f'; // 预测错误标黄色
+            } else {
+                fillColor = point.label === 0 ? '#3498db' : 
+                            point.label === 1 ? '#e74c3c' : 
+                            '#95a5a6'; // 未标注灰色
+            }
+            
+            ctx.fillStyle = fillColor;
+            ctx.fill();
+            
+            // 选中状态加边框
+            if (isSelected) {
+                ctx.strokeStyle = '#2c3e50';
+                ctx.lineWidth = 3;
+                ctx.stroke();
+            }
+
+            // 标注标签文字
+            if (point.label !== null || (isTest && point.predictedLabel !== -1)) {
+                ctx.fillStyle = 'white';
+                ctx.font = '12px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText(
+                    isTest ? `预测:${point.predictedLabel}` : point.label, 
+                    point.x, point.y + 5
+                );
+            }
+        }
+
+        // 逻辑回归（监督学习核心算法）
+        class LogisticRegression {
+            constructor() {
+                this.weights = [0, 0, 0]; // w0(偏置) + w1(大小) + w2(颜色)
+                this.learningRate = 0.01;
+                this.iterations = 1000;
+            }
+
+            // sigmoid激活函数
+            sigmoid(z) {
+                return 1 / (1 + Math.exp(-z));
+            }
+
+            // 特征归一化（0-1）
+            normalizeFeatures(points) {
+                const maxSize = Math.max(...points.map(p => p.size));
+                const minSize = Math.min(...points.map(p => p.size));
+                const normalized = points.map(p => ({
+                    x: p.x,
+                    y: p.y,
+                    size: (p.size - minSize) / (maxSize - minSize), // 大小归一化
+                    color: p.color, // 颜色已在0-1之间
+                    label: p.label
+                }));
+                return normalized;
+            }
+
+            // 训练模型
+            train(points) {
+                if (points.length < 5) return false;
+
+                // 特征归一化
+                const normPoints = this.normalizeFeatures(points);
+                const labeledPoints = normPoints.filter(p => p.label !== null);
+
+                // 梯度下降优化
+                for (let i = 0; i < this.iterations; i++) {
+                    let dw0 = 0, dw1 = 0, dw2 = 0;
+                    let totalError = 0;
+
+                    labeledPoints.forEach(point => {
+                        const x1 = point.size; // 特征1：大小
+                        const x2 = point.color; // 特征2：颜色
+                        const y = point.label; // 标签
+
+                        // 预测值
+                        const z = this.weights[0] + this.weights[1] * x1 + this.weights[2] * x2;
+                        const yPred = this.sigmoid(z);
+
+                        // 误差
+                        const error = yPred - y;
+                        totalError += Math.abs(error);
+
+                        // 梯度计算
+                        dw0 += error;
+                        dw1 += error * x1;
+                        dw2 += error * x2;
+                    });
+
+                    // 更新权重
+                    this.weights[0] -= this.learningRate * dw0 / labeledPoints.length;
+                    this.weights[1] -= this.learningRate * dw1 / labeledPoints.length;
+                    this.weights[2] -= this.learningRate * dw2 / labeledPoints.length;
+
+                    // 误差足够小时提前停止
+                    if (totalError / labeledPoints.length < 0.01) break;
+                }
+                return true;
+            }
+
+            // 预测单个点
+            predict(point) {
+                // 归一化特征
+                const maxSize = Math.max(...trainPoints.map(p => p.size));
+                const minSize = Math.min(...trainPoints.map(p => p.size));
+                const normSize = (point.size - minSize) / (maxSize - minSize);
+                const normColor = point.color;
+
+                // 计算预测值
+                const z = this.weights[0] + this.weights[1] * normSize + this.weights[2] * normColor;
+                const yPred = this.sigmoid(z);
+                return yPred >= 0.5 ? 1 : 0;
+            }
+        }
+
+        // 事件监听：生成训练数据
+        generateTrainBtn.addEventListener('click', () => {
+            trainPoints = generateRandomPoints(10, true);
+            selectedPointIndex = -1;
+            label0Btn.disabled = true;
+            label1Btn.disabled = true;
+            trainBtn.disabled = true;
+            generateTestBtn.disabled = true;
+            statusText.textContent = `生成了${trainPoints.length}个训练点，请点击点并标注标签`;
+            drawPoints();
+            generateTrainBtn.disabled = true;
+        });
+
+        // 事件监听：画布点击（选择点）
+        canvas.addEventListener('click', (e) => {
+            if (trainPoints.length === 0 && testPoints.length === 0) return;
+
+            const rect = canvas.getBoundingClientRect();
+            const clickX = e.clientX - rect.left;
+            const clickY = e.clientY - rect.top;
+
+            // 查找点击的点
+            for (let i = 0; i < trainPoints.length; i++) {
+                const point = trainPoints[i];
+                const dx = clickX - point.x;
+                const dy = clickY - point.y;
+                if (dx * dx + dy * dy <= point.size * point.size) {
+                    // 取消之前选中的点
+                    if (selectedPointIndex !== -1) {
+                        trainPoints[selectedPointIndex].selected = false;
+                    }
+                    // 选中当前点
+                    selectedPointIndex = i;
+                    trainPoints[i].selected = true;
+                    label0Btn.disabled = false;
+                    label1Btn.disabled = false;
+                    statusText.textContent = `选中了点${i+1}，请选择标签`;
+                    drawPoints();
+                    return;
+                }
+            }
+
+            // 未选中任何点
+            selectedPointIndex = -1;
+            label0Btn.disabled = true;
+            label1Btn.disabled = true;
+        });
+
+        // 事件监听：标注标签
+        function labelPoint(label) {
+            if (selectedPointIndex === -1) return;
+            trainPoints[selectedPointIndex].label = label;
+            trainPoints[selectedPointIndex].selected = false;
+            selectedPointIndex = -1;
+            label0Btn.disabled = true;
+            label1Btn.disabled = true;
+            drawPoints();
+
+            // 检查是否有足够的标注点（至少5个）
+            const labeledCount = trainPoints.filter(p => p.label !== null).length;
+            statusText.textContent = `已标注${labeledCount}个点（需至少5个）`;
+            trainBtn.disabled = labeledCount < 5;
+        }
+
+        label0Btn.addEventListener('click', () => labelPoint(0));
+        label1Btn.addEventListener('click', () => labelPoint(1));
+
+        // 事件监听：训练算法
+        trainBtn.addEventListener('click', () => {
+            model = new LogisticRegression();
+            const trainSuccess = model.train(trainPoints);
+            if (trainSuccess) {
+                statusText.textContent = '算法训练完成！点击「生成测试数据」验证效果';
+                generateTestBtn.disabled = false;
+                trainBtn.disabled = true;
+            } else {
+                statusText.textContent = '训练失败：请标注至少5个点';
+            }
+        });
+
+        // 事件监听：生成测试数据
+        generateTestBtn.addEventListener('click', () => {
+            testPoints = generateRandomPoints(8, false);
+            let correctCount = 0;
+
+            // 预测测试点标签（这里模拟"真实标签"：和训练时的分类规则一致）
+            testPoints.forEach(point => {
+                // 模拟真实标签（比如：大小>25 或 颜色>0.5 则为1）
+                point.actualLabel = (point.size > 25 || point.color > 0.5) ? 1 : 0;
+                // 算法预测标签
+                point.predictedLabel = model.predict(point);
+                if (point.predictedLabel === point.actualLabel) correctCount++;
+            });
+
+            const accuracy = (correctCount / testPoints.length) * 100;
+            statusText.textContent = `测试完成！准确率：${accuracy.toFixed(1)}%（正确${correctCount}/${testPoints.length}）`;
+            drawPoints();
+            generateTestBtn.disabled = true;
+        });
+
+        // 事件监听：重置游戏
+        resetBtn.addEventListener('click', () => {
+            trainPoints = [];
+            testPoints = [];
+            selectedPointIndex = -1;
+            model = null;
+            initCanvas();
+            generateTrainBtn.disabled = false;
+            label0Btn.disabled = true;
+            label1Btn.disabled = true;
+            trainBtn.disabled = true;
+            generateTestBtn.disabled = true;
+            statusText.textContent = '游戏已重置：点击「生成训练数据」开始';
+        });
+
+        // 初始化
+        initCanvas();
+    </script>
+</body>
+</html>
