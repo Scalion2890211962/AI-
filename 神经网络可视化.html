@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>神经网络结构可视化 H5 游戏</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: Arial, sans-serif;
+        }
+        body {
+            background-color: #f0f2f5;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+        #canvas {
+            background-color: white;
+            border: 2px solid #333;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        .controls {
+            margin: 20px 0;
+            text-align: center;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 0 10px;
+            background-color: #4285f4;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #3367d6;
+        }
+        .info {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <h1>神经网络结构可视化</h1>
+    <div class="controls">
+        <button id="resetBtn">重置网络</button>
+        <button id="randomBtn">随机输入值</button>
+        <div class="info">点击输入层神经元修改输入值 (0-1)</div>
+    </div>
+    <canvas id="canvas" width="800" height="500"></canvas>
+
+    <script>
+        // 获取 Canvas 上下文
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        // 神经网络配置
+        const NETWORK_CONFIG = {
+            inputNeurons: 4,    // 输入层神经元数量
+            hiddenNeurons: 5,   // 隐藏层神经元数量
+            outputNeurons: 2,   // 输出层神经元数量
+            neuronRadius: 20,   // 神经元绘制半径
+            layerPadding: 180,  // 层之间的间距
+            neuronPadding: 60,  // 神经元之间的垂直间距
+            baseX: 100,         // 起始 X 坐标
+            baseY: 100          // 起始 Y 坐标
+        };
+
+        // 神经网络数据
+        let networkData = {
+            inputs: [],         // 输入层值
+            hiddenWeights: [],  // 输入层到隐藏层的权重
+            hiddenBiases: [],   // 隐藏层偏置
+            hiddenOutputs: [],  // 隐藏层输出值
+            outputWeights: [],  // 隐藏层到输出层的权重
+            outputBiases: [],   // 输出层偏置
+            outputs: []         // 输出层值
+        };
+
+        // 初始化神经网络
+        function initNetwork() {
+            // 初始化输入值 (默认 0.5)
+            networkData.inputs = Array(NETWORK_CONFIG.inputNeurons).fill(0.5);
+            
+            // 初始化权重和偏置 (随机值 -1 到 1)
+            networkData.hiddenWeights = generateRandomWeights(
+                NETWORK_CONFIG.inputNeurons, 
+                NETWORK_CONFIG.hiddenNeurons
+            );
+            networkData.hiddenBiases = generateRandomBiases(NETWORK_CONFIG.hiddenNeurons);
+            
+            networkData.outputWeights = generateRandomWeights(
+                NETWORK_CONFIG.hiddenNeurons, 
+                NETWORK_CONFIG.outputNeurons
+            );
+            networkData.outputBiases = generateRandomBiases(NETWORK_CONFIG.outputNeurons);
+            
+            // 计算初始输出
+            forwardPropagation();
+        }
+
+        // 生成随机权重矩阵
+        function generateRandomWeights(inputCount, outputCount) {
+            const weights = [];
+            for (let i = 0; i < inputCount; i++) {
+                weights[i] = [];
+                for (let j = 0; j < outputCount; j++) {
+                    weights[i][j] = Math.random() * 2 - 1; // -1 到 1
+                }
+            }
+            return weights;
+        }
+
+        // 生成随机偏置数组
+        function generateRandomBiases(count) {
+            return Array(count).fill().map(() => Math.random() * 2 - 1);
+        }
+
+        // Sigmoid 激活函数
+        function sigmoid(x) {
+            return 1 / (1 + Math.exp(-x));
+        }
+
+        // 前向传播计算
+        function forwardPropagation() {
+            const { inputs, hiddenWeights, hiddenBiases, outputWeights, outputBiases } = networkData;
+            const { inputNeurons, hiddenNeurons, outputNeurons } = NETWORK_CONFIG;
+
+            // 计算隐藏层输出
+            const hiddenOutputs = [];
+            for (let j = 0; j < hiddenNeurons; j++) {
+                let sum = hiddenBiases[j];
+                for (let i = 0; i < inputNeurons; i++) {
+                    sum += inputs[i] * hiddenWeights[i][j];
+                }
+                hiddenOutputs[j] = sigmoid(sum);
+            }
+            networkData.hiddenOutputs = hiddenOutputs;
+
+            // 计算输出层输出
+            const outputs = [];
+            for (let k = 0; k < outputNeurons; k++) {
+                let sum = outputBiases[k];
+                for (let j = 0; j < hiddenNeurons; j++) {
+                    sum += hiddenOutputs[j] * outputWeights[j][k];
+                }
+                outputs[k] = sigmoid(sum);
+            }
+            networkData.outputs = outputs;
+        }
+
+        // 绘制神经网络
+        function drawNetwork() {
+            // 清空画布
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // 绘制连接线路
+            drawConnections();
+            
+            // 绘制神经元
+            drawNeurons();
+            
+            // 绘制层标签
+            drawLayerLabels();
+        }
+
+        // 绘制神经元之间的连接
+        function drawConnections() {
+            const { inputNeurons, hiddenNeurons, outputNeurons, neuronRadius, layerPadding, baseX, baseY, neuronPadding } = NETWORK_CONFIG;
+            
+            // 输入层到隐藏层的连接
+            ctx.strokeStyle = '#ccc';
+            for (let i = 0; i < inputNeurons; i++) {
+                const inputY = baseY + i * neuronPadding;
+                for (let j = 0; j < hiddenNeurons; j++) {
+                    const hiddenY = baseY + (j - (hiddenNeurons - inputNeurons) / 2) * neuronPadding;
+                    
+                    // 根据权重调整线条颜色和宽度
+                    const weight = networkData.hiddenWeights[i][j];
+                    const weightAbs = Math.abs(weight);
+                    ctx.lineWidth = 1 + weightAbs * 2;
+                    ctx.strokeStyle = weight > 0 ? `rgba(76, 175, 80, ${weightAbs})` : `rgba(244, 67, 54, ${weightAbs})`;
+                    
+                    // 绘制连接线
+                    ctx.beginPath();
+                    ctx.moveTo(baseX + neuronRadius, inputY);
+                    ctx.lineTo(baseX + layerPadding - neuronRadius, hiddenY);
+                    ctx.stroke();
+                }
+            }
+            
+            // 隐藏层到输出层的连接
+            for (let j = 0; j < hiddenNeurons; j++) {
+                const hiddenY = baseY + (j - (hiddenNeurons - inputNeurons) / 2) * neuronPadding;
+                for (let k = 0; k < outputNeurons; k++) {
+                    const outputY = baseY + (k - (outputNeurons - inputNeurons) / 2) * neuronPadding;
+                    
+                    // 根据权重调整线条颜色和宽度
+                    const weight = networkData.outputWeights[j][k];
+                    const weightAbs = Math.abs(weight);
+                    ctx.lineWidth = 1 + weightAbs * 2;
+                    ctx.strokeStyle = weight > 0 ? `rgba(76, 175, 80, ${weightAbs})` : `rgba(244, 67, 54, ${weightAbs})`;
+                    
+                    // 绘制连接线
+                    ctx.beginPath();
+                    ctx.moveTo(baseX + layerPadding + neuronRadius, hiddenY);
+                    ctx.lineTo(baseX + 2 * layerPadding - neuronRadius, outputY);
+                    ctx.stroke();
+                }
+            }
+        }
+
+        // 绘制神经元节点
+        function drawNeurons() {
+            const { inputNeurons, hiddenNeurons, outputNeurons, neuronRadius, layerPadding, baseX, baseY, neuronPadding } = NETWORK_CONFIG;
+            
+            // 绘制输入层神经元
+            for (let i = 0; i < inputNeurons; i++) {
+                const x = baseX;
+                const y = baseY + i * neuronPadding;
+                const value = networkData.inputs[i];
+                
+                // 绘制神经元圆形
+                ctx.beginPath();
+                ctx.arc(x, y, neuronRadius, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(33, 150, 243, ${value})`;
+                ctx.fill();
+                ctx.strokeStyle = '#2196F3';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                
+                // 绘制数值文本
+                ctx.fillStyle = '#000';
+                ctx.font = '14px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(value.toFixed(2), x, y);
+            }
+            
+            // 绘制隐藏层神经元
+            for (let j = 0; j < hiddenNeurons; j++) {
+                const x = baseX + layerPadding;
+                const y = baseY + (j - (hiddenNeurons - inputNeurons) / 2) * neuronPadding;
+                const value = networkData.hiddenOutputs[j];
+                
+                ctx.beginPath();
+                ctx.arc(x, y, neuronRadius, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(156, 39, 176, ${value})`;
+                ctx.fill();
+                ctx.strokeStyle = '#9C27B0';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                
+                ctx.fillStyle = '#000';
+                ctx.font = '14px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(value.toFixed(2), x, y);
+            }
+            
+            // 绘制输出层神经元
+            for (let k = 0; k < outputNeurons; k++) {
+                const x = baseX + 2 * layerPadding;
+                const y = baseY + (k - (outputNeurons - inputNeurons) / 2) * neuronPadding;
+                const value = networkData.outputs[k];
+                
+                ctx.beginPath();
+                ctx.arc(x, y, neuronRadius, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(255, 152, 0, ${value})`;
+                ctx.fill();
+                ctx.strokeStyle = '#FF9800';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                
+                ctx.fillStyle = '#000';
+                ctx.font = '14px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(value.toFixed(2), x, y);
+            }
+        }
+
+        // 绘制层标签
+        function drawLayerLabels() {
+            const { layerPadding, baseX, baseY } = NETWORK_CONFIG;
+            
+            ctx.fillStyle = '#333';
+            ctx.font = '18px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            
+            // 输入层标签
+            ctx.fillText('输入层 (Input)', baseX, baseY - 40);
+            // 隐藏层标签
+            ctx.fillText('隐藏层 (Hidden)', baseX + layerPadding, baseY - 40);
+            // 输出层标签
+            ctx.fillText('输出层 (Output)', baseX + 2 * layerPadding, baseY - 40);
+        }
+
+        // 处理鼠标点击事件
+        function handleCanvasClick(e) {
+            const rect = canvas.getBoundingClientRect();
+            const clickX = e.clientX - rect.left;
+            const clickY = e.clientY - rect.top;
+            
+            const { inputNeurons, neuronRadius, baseX, baseY, neuronPadding } = NETWORK_CONFIG;
+            
+            // 检查是否点击了输入层神经元
+            for (let i = 0; i < inputNeurons; i++) {
+                const neuronX = baseX;
+                const neuronY = baseY + i * neuronPadding;
+                
+                // 计算点击位置到神经元中心的距离
+                const distance = Math.sqrt(
+                    Math.pow(clickX - neuronX, 2) + 
+                    Math.pow(clickY - neuronY, 2)
+                );
+                
+                // 如果点击了神经元，修改其值
+                if (distance <= neuronRadius) {
+                    // 随机生成 0-1 之间的新值
+                    networkData.inputs[i] = Math.random();
+                    // 重新计算网络输出
+                    forwardPropagation();
+                    // 重新绘制
+                    drawNetwork();
+                    break;
+                }
+            }
+        }
+
+        // 绑定事件监听
+        function bindEvents() {
+            // 画布点击事件
+            canvas.addEventListener('click', handleCanvasClick);
+            
+            // 重置按钮
+            document.getElementById('resetBtn').addEventListener('click', () => {
+                initNetwork();
+                drawNetwork();
+            });
+            
+            // 随机输入按钮
+            document.getElementById('randomBtn').addEventListener('click', () => {
+                networkData.inputs = networkData.inputs.map(() => Math.random());
+                forwardPropagation();
+                drawNetwork();
+            });
+        }
+
+        // 初始化并启动
+        function init() {
+            initNetwork();
+            bindEvents();
+            drawNetwork();
+        }
+
+        // 启动应用
+        init();
+    </script>
+</body>
+</html>
