@@ -1,0 +1,805 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>比特深渊：寻路者</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            background: #0a0a0f;
+            color: #00ff88;
+            font-family: 'Courier New', monospace;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+        }
+        
+        .header {
+            text-align: center;
+            padding: 20px;
+            text-shadow: 0 0 20px #00ff88;
+        }
+        
+        h1 {
+            font-size: 2em;
+            margin-bottom: 10px;
+            animation: glitch 2s infinite;
+        }
+        
+        @keyframes glitch {
+            0%, 100% { text-shadow: 2px 0 #ff0080, -2px 0 #00ffff; }
+            25% { text-shadow: -2px 0 #ff0080, 2px 0 #00ffff; }
+            50% { text-shadow: 2px 0 #00ffff, -2px 0 #ff0080; }
+        }
+        
+        .game-container {
+            display: flex;
+            gap: 20px;
+            padding: 20px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        
+        #gameCanvas {
+            border: 2px solid #00ff88;
+            box-shadow: 0 0 30px rgba(0, 255, 136, 0.3);
+            background: #050508;
+        }
+        
+        .sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            max-width: 300px;
+        }
+        
+        .panel {
+            background: rgba(0, 255, 136, 0.05);
+            border: 1px solid #00ff88;
+            padding: 15px;
+            border-radius: 8px;
+        }
+        
+        .panel h3 {
+            margin-bottom: 10px;
+            color: #00ffff;
+        }
+        
+        .stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            font-size: 0.9em;
+        }
+        
+        .stat-item {
+            background: rgba(0, 255, 136, 0.1);
+            padding: 8px;
+            border-radius: 4px;
+            text-align: center;
+        }
+        
+        .stat-value {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #fff;
+        }
+        
+        button {
+            background: transparent;
+            border: 2px solid #00ff88;
+            color: #00ff88;
+            padding: 12px 24px;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 1em;
+            transition: all 0.3s;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+        
+        button:hover {
+            background: #00ff88;
+            color: #0a0a0f;
+            box-shadow: 0 0 20px #00ff88;
+        }
+        
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .algorithm-viz {
+            font-size: 0.85em;
+            line-height: 1.6;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        
+        .log-entry {
+            padding: 4px 0;
+            border-bottom: 1px solid rgba(0, 255, 136, 0.2);
+            animation: fadeIn 0.3s;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateX(-10px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+        
+        .node-explored { color: #ffaa00; }
+        .node-path { color: #00ffff; font-weight: bold; }
+        
+        .controls {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        
+        .legend {
+            display: flex;
+            gap: 15px;
+            font-size: 0.8em;
+            flex-wrap: wrap;
+            justify-content: center;
+            margin-top: 10px;
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        .legend-color {
+            width: 20px;
+            height: 20px;
+            border: 1px solid #00ff88;
+        }
+        
+        .tooltip {
+            position: fixed;
+            background: rgba(0, 0, 0, 0.9);
+            border: 1px solid #00ff88;
+            padding: 8px;
+            border-radius: 4px;
+            pointer-events: none;
+            display: none;
+            z-index: 1000;
+            font-size: 0.85em;
+        }
+        
+        @media (max-width: 768px) {
+            .game-container {
+                flex-direction: column;
+            }
+            .sidebar {
+                max-width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>比特深渊：寻路者</h1>
+        <p>使用 Dijkstra 算法寻找最优路径 | 动态规划优化资源</p>
+    </div>
+    
+    <div class="game-container">
+        <div>
+            <canvas id="gameCanvas" width="600" height="600"></canvas>
+            <div class="legend">
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #0a0a0f;"></div>
+                    <span>可通行</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #1a1a2e;"></div>
+                    <span>墙壁</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #00ff88;"></div>
+                    <span>起点</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #ff0080;"></div>
+                    <span>终点</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #ffaa00;"></div>
+                    <span>已探索</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #00ffff;"></div>
+                    <span>最优路径</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #ffff00;"></div>
+                    <span>能量节点</span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="sidebar">
+            <div class="panel">
+                <h3>📊 状态面板</h3>
+                <div class="stats">
+                    <div class="stat-item">
+                        <div>步数</div>
+                        <div class="stat-value" id="steps">0</div>
+                    </div>
+                    <div class="stat-item">
+                        <div>能量</div>
+                        <div class="stat-value" id="energy">100</div>
+                    </div>
+                    <div class="stat-item">
+                        <div>节点数</div>
+                        <div class="stat-value" id="nodes">0</div>
+                    </div>
+                    <div class="stat-item">
+                        <div>路径长</div>
+                        <div class="stat-value" id="pathLength">-</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="panel">
+                <h3>🎮 控制</h3>
+                <div class="controls">
+                    <button onclick="game.generateMaze()">生成迷宫</button>
+                    <button onclick="game.runDijkstra()" id="dijkstraBtn">运行 Dijkstra</button>
+                    <button onclick="game.reset()">重置</button>
+                </div>
+                <p style="margin-top: 10px; font-size: 0.85em; color: #888;">
+                    点击格子设置墙壁/能量节点<br>
+                    方向键或 WASD 移动
+                </p>
+            </div>
+            
+            <div class="panel">
+                <h3>🔍 算法可视化</h3>
+                <div class="algorithm-viz" id="algoLog">
+                    <div class="log-entry">等待启动算法...</div>
+                </div>
+            </div>
+            
+            <div class="panel">
+                <h3>📚 算法原理</h3>
+                <p style="font-size: 0.85em; line-height: 1.6; color: #aaa;">
+                    <strong style="color: #00ffff;">Dijkstra 算法：</strong><br>
+                    1. 初始化：起点距离为0，其他为∞<br>
+                    2. 选择当前距离最小的未访问节点<br>
+                    3. 更新邻居节点的最短距离<br>
+                    4. 重复直到到达终点<br><br>
+                    
+                    <strong style="color: #ffaa00;">动态规划：</strong><br>
+                    收集能量节点可恢复能量，<br>
+                    需要规划最优收集路径。
+                </p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="tooltip" id="tooltip"></div>
+
+    <script>
+        class PriorityQueue {
+            constructor() {
+                this.items = [];
+            }
+            
+            enqueue(element, priority) {
+                this.items.push({element, priority});
+                this.items.sort((a, b) => a.priority - b.priority);
+            }
+            
+            dequeue() {
+                return this.items.shift();
+            }
+            
+            isEmpty() {
+                return this.items.length === 0;
+            }
+        }
+        
+        class MazeGame {
+            constructor() {
+                this.canvas = document.getElementById('gameCanvas');
+                this.ctx = this.canvas.getContext('2d');
+                this.cellSize = 30;
+                this.cols = 20;
+                this.rows = 20;
+                this.grid = [];
+                this.player = {x: 0, y: 0};
+                this.end = {x: 19, y: 19};
+                this.energy = 100;
+                this.steps = 0;
+                this.visited = new Set();
+                this.path = [];
+                this.energyNodes = new Set();
+                this.isRunning = false;
+                this.animationSpeed = 50;
+                
+                this.init();
+                this.bindEvents();
+                this.generateMaze();
+                this.gameLoop();
+            }
+            
+            init() {
+                // 初始化网格
+                for (let y = 0; y < this.rows; y++) {
+                    this.grid[y] = [];
+                    for (let x = 0; x < this.cols; x++) {
+                        this.grid[y][x] = {
+                            x, y,
+                            wall: false,
+                            visited: false,
+                            distance: Infinity,
+                            previous: null
+                        };
+                    }
+                }
+            }
+            
+            generateMaze() {
+                // 使用递归回溯算法生成迷宫
+                this.reset();
+                
+                // 初始化所有为墙
+                for (let y = 0; y < this.rows; y++) {
+                    for (let x = 0; x < this.cols; x++) {
+                        this.grid[y][x].wall = true;
+                    }
+                }
+                
+                // 递归回溯生成路径
+                const stack = [];
+                const start = {x: 0, y: 0};
+                this.grid[start.y][start.x].wall = false;
+                stack.push(start);
+                
+                const directions = [
+                    {x: 0, y: -2}, {x: 2, y: 0}, 
+                    {x: 0, y: 2}, {x: -2, y: 0}
+                ];
+                
+                while (stack.length > 0) {
+                    const current = stack[stack.length - 1];
+                    const neighbors = [];
+                    
+                    for (let dir of directions) {
+                        const nx = current.x + dir.x;
+                        const ny = current.y + dir.y;
+                        
+                        if (nx >= 0 && nx < this.cols && ny >= 0 && ny < this.rows 
+                            && this.grid[ny][nx].wall) {
+                            neighbors.push({x: nx, y: ny, dx: dir.x/2, dy: dir.y/2});
+                        }
+                    }
+                    
+                    if (neighbors.length > 0) {
+                        const next = neighbors[Math.floor(Math.random() * neighbors.length)];
+                        this.grid[next.y][next.x].wall = false;
+                        this.grid[current.y + next.dy][current.x + next.dx].wall = false;
+                        stack.push({x: next.x, y: next.y});
+                    } else {
+                        stack.pop();
+                    }
+                }
+                
+                // 添加一些随机额外路径
+                for (let i = 0; i < 30; i++) {
+                    const x = Math.floor(Math.random() * this.cols);
+                    const y = Math.floor(Math.random() * this.rows);
+                    if ((x !== 0 || y !== 0) && (x !== 19 || y !== 19)) {
+                        this.grid[y][x].wall = false;
+                    }
+                }
+                
+                // 随机放置能量节点
+                this.energyNodes.clear();
+                for (let i = 0; i < 5; i++) {
+                    let x, y;
+                    do {
+                        x = Math.floor(Math.random() * this.cols);
+                        y = Math.floor(Math.random() * this.rows);
+                    } while (this.grid[y][x].wall || (x === 0 && y === 0) || (x === 19 && y === 19));
+                    this.energyNodes.add(`${x},${y}`);
+                }
+                
+                this.log("迷宫已生成，使用递归回溯算法");
+            }
+            
+            async runDijkstra() {
+                if (this.isRunning) return;
+                this.isRunning = true;
+                document.getElementById('dijkstraBtn').disabled = true;
+                
+                // 重置距离
+                for (let y = 0; y < this.rows; y++) {
+                    for (let x = 0; x < this.cols; x++) {
+                        this.grid[y][x].distance = Infinity;
+                        this.grid[y][x].previous = null;
+                        this.grid[y][x].visited = false;
+                    }
+                }
+                
+                const pq = new PriorityQueue();
+                const start = this.grid[this.player.y][this.player.x];
+                start.distance = 0;
+                pq.enqueue(start, 0);
+                
+                this.visited.clear();
+                this.path = [];
+                
+                this.log("开始 Dijkstra 算法...");
+                this.log(`初始化：起点 (${this.player.x}, ${this.player.y}) 距离 = 0`);
+                
+                while (!pq.isEmpty()) {
+                    const current = pq.dequeue().element;
+                    
+                    if (current.visited) continue;
+                    current.visited = true;
+                    this.visited.add(`${current.x},${current.y}`);
+                    
+                    this.log(`<span class="node-explored">探索节点 (${current.x}, ${current.y})，当前距离: ${current.distance}</span>`);
+                    
+                    // 可视化当前检查的节点
+                    this.draw();
+                    await this.sleep(this.animationSpeed);
+                    
+                    if (current.x === this.end.x && current.y === this.end.y) {
+                        this.log(`<span class="node-path">到达终点！开始回溯路径...</span>`);
+                        break;
+                    }
+                    
+                    const neighbors = this.getNeighbors(current);
+                    for (let neighbor of neighbors) {
+                        if (!neighbor.visited && !neighbor.wall) {
+                            const weight = this.energyNodes.has(`${neighbor.x},${neighbor.y}`) ? 0.5 : 1;
+                            const newDist = current.distance + weight;
+                            
+                            if (newDist < neighbor.distance) {
+                                neighbor.distance = newDist;
+                                neighbor.previous = current;
+                                pq.enqueue(neighbor, newDist);
+                                this.log(`  更新邻居 (${neighbor.x}, ${neighbor.y}): 距离 ${newDist.toFixed(1)}`);
+                            }
+                        }
+                    }
+                }
+                
+                // 重建路径
+                this.reconstructPath();
+                this.isRunning = false;
+                document.getElementById('dijkstraBtn').disabled = false;
+                
+                document.getElementById('pathLength').textContent = 
+                    this.grid[this.end.y][this.end.x].distance.toFixed(1);
+            }
+            
+            getNeighbors(node) {
+                const dirs = [{x: 0, y: -1}, {x: 1, y: 0}, {x: 0, y: 1}, {x: -1, y: 0}];
+                const neighbors = [];
+                
+                for (let dir of dirs) {
+                    const nx = node.x + dir.x;
+                    const ny = node.y + dir.y;
+                    
+                    if (nx >= 0 && nx < this.cols && ny >= 0 && ny < this.rows) {
+                        neighbors.push(this.grid[ny][nx]);
+                    }
+                }
+                
+                return neighbors;
+            }
+            
+            reconstructPath() {
+                let current = this.grid[this.end.y][this.end.x];
+                this.path = [];
+                
+                while (current) {
+                    this.path.unshift({x: current.x, y: current.y});
+                    current = current.previous;
+                }
+                
+                if (this.path.length > 0 && this.path[0].x === this.player.x && this.path[0].y === this.player.y) {
+                    this.log(`<span class="node-path">最优路径找到！共 ${this.path.length} 个节点</span>`);
+                    this.animatePath();
+                } else {
+                    this.log("未找到可达路径");
+                }
+            }
+            
+            async animatePath() {
+                for (let i = 0; i < this.path.length; i++) {
+                    this.draw();
+                    await this.sleep(100);
+                }
+            }
+            
+            movePlayer(dx, dy) {
+                if (this.isRunning) return;
+                
+                const newX = this.player.x + dx;
+                const newY = this.player.y + dy;
+                
+                if (newX >= 0 && newX < this.cols && newY >= 0 && newY < this.rows 
+                    && !this.grid[newY][newX].wall) {
+                    
+                    this.player.x = newX;
+                    this.player.y = newY;
+                    this.steps++;
+                    this.energy -= 1;
+                    
+                    // 检查能量节点
+                    const key = `${newX},${newY}`;
+                    if (this.energyNodes.has(key)) {
+                        this.energy += 20;
+                        this.energyNodes.delete(key);
+                        this.log(`收集能量节点！能量 +20`);
+                    }
+                    
+                    // 检查终点
+                    if (newX === this.end.x && newY === this.end.y) {
+                        this.log(`🎉 到达终点！总步数: ${this.steps}`);
+                        alert(`恭喜！你到达了数据深渊的核心！\n步数: ${this.steps}\n剩余能量: ${this.energy}`);
+                    }
+                    
+                    this.updateStats();
+                }
+            }
+            
+            updateStats() {
+                document.getElementById('steps').textContent = this.steps;
+                document.getElementById('energy').textContent = this.energy;
+                document.getElementById('nodes').textContent = this.visited.size;
+            }
+            
+            reset() {
+                this.player = {x: 0, y: 0};
+                this.end = {x: 19, y: 19};
+                this.energy = 100;
+                this.steps = 0;
+                this.visited.clear();
+                this.path = [];
+                this.isRunning = false;
+                
+                for (let y = 0; y < this.rows; y++) {
+                    for (let x = 0; x < this.cols; x++) {
+                        this.grid[y][x].visited = false;
+                        this.grid[y][x].distance = Infinity;
+                        this.grid[y][x].previous = null;
+                    }
+                }
+                
+                this.updateStats();
+                document.getElementById('pathLength').textContent = '-';
+                this.log("游戏已重置");
+            }
+            
+            draw() {
+                this.ctx.fillStyle = '#050508';
+                this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+                
+                // 绘制网格
+                for (let y = 0; y < this.rows; y++) {
+                    for (let x = 0; x < this.cols; x++) {
+                        const cell = this.grid[y][x];
+                        const px = x * this.cellSize;
+                        const py = y * this.cellSize;
+                        
+                        if (cell.wall) {
+                            this.ctx.fillStyle = '#1a1a2e';
+                            this.ctx.fillRect(px, py, this.cellSize, this.cellSize);
+                        } else {
+                            // 绘制距离值
+                            if (cell.distance !== Infinity) {
+                                this.ctx.fillStyle = `rgba(0, 255, 136, ${Math.min(0.3, cell.distance / 50)})`;
+                                this.ctx.fillRect(px, py, this.cellSize, this.cellSize);
+                            }
+                        }
+                        
+                        // 绘制边框
+                        this.ctx.strokeStyle = '#0f3460';
+                        this.ctx.strokeRect(px, py, this.cellSize, this.cellSize);
+                    }
+                }
+                
+                // 绘制已访问节点
+                for (let key of this.visited) {
+                    const [x, y] = key.split(',').map(Number);
+                    this.ctx.fillStyle = 'rgba(255, 170, 0, 0.4)';
+                    this.ctx.fillRect(x * this.cellSize, y * this.cellSize, this.cellSize, this.cellSize);
+                }
+                
+                // 绘制路径
+                if (this.path.length > 0) {
+                    this.ctx.strokeStyle = '#00ffff';
+                    this.ctx.lineWidth = 3;
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(
+                        this.path[0].x * this.cellSize + this.cellSize/2,
+                        this.path[0].y * this.cellSize + this.cellSize/2
+                    );
+                    for (let i = 1; i < this.path.length; i++) {
+                        this.ctx.lineTo(
+                            this.path[i].x * this.cellSize + this.cellSize/2,
+                            this.path[i].y * this.cellSize + this.cellSize/2
+                        );
+                    }
+                    this.ctx.stroke();
+                    this.ctx.lineWidth = 1;
+                }
+                
+                // 绘制能量节点
+                for (let key of this.energyNodes) {
+                    const [x, y] = key.split(',').map(Number);
+                    const cx = x * this.cellSize + this.cellSize/2;
+                    const cy = y * this.cellSize + this.cellSize/2;
+                    
+                    this.ctx.fillStyle = '#ffff00';
+                    this.ctx.beginPath();
+                    this.ctx.arc(cx, cy, 6, 0, Math.PI * 2);
+                    this.ctx.fill();
+                    
+                    // 脉冲效果
+                    this.ctx.strokeStyle = `rgba(255, 255, 0, ${0.5 + Math.sin(Date.now() / 200) * 0.3})`;
+                    this.ctx.lineWidth = 2;
+                    this.ctx.beginPath();
+                    this.ctx.arc(cx, cy, 10 + Math.sin(Date.now() / 200) * 3, 0, Math.PI * 2);
+                    this.ctx.stroke();
+                }
+                
+                // 绘制起点
+                this.ctx.fillStyle = '#00ff88';
+                this.ctx.fillRect(2, 2, this.cellSize-4, this.cellSize-4);
+                this.ctx.fillStyle = '#000';
+                this.ctx.font = '12px monospace';
+                this.ctx.fillText('S', 10, 20);
+                
+                // 绘制终点
+                const ex = this.end.x * this.cellSize;
+                const ey = this.end.y * this.cellSize;
+                this.ctx.fillStyle = '#ff0080';
+                this.ctx.fillRect(ex + 2, ey + 2, this.cellSize-4, this.cellSize-4);
+                this.ctx.fillStyle = '#fff';
+                this.ctx.fillText('E', ex + 10, ey + 20);
+                
+                // 绘制玩家
+                const px = this.player.x * this.cellSize + this.cellSize/2;
+                const py = this.player.y * this.cellSize + this.cellSize/2;
+                
+                this.ctx.shadowBlur = 20;
+                this.ctx.shadowColor = '#00ff88';
+                this.ctx.fillStyle = '#00ff88';
+                this.ctx.beginPath();
+                this.ctx.arc(px, py, 8, 0, Math.PI * 2);
+                this.ctx.fill();
+                this.ctx.shadowBlur = 0;
+                
+                // 玩家光晕
+                this.ctx.strokeStyle = `rgba(0, 255, 136, ${0.3 + Math.sin(Date.now() / 300) * 0.2})`;
+                this.ctx.lineWidth = 2;
+                this.ctx.beginPath();
+                this.ctx.arc(px, py, 12, 0, Math.PI * 2);
+                this.ctx.stroke();
+            }
+            
+            gameLoop() {
+                this.draw();
+                requestAnimationFrame(() => this.gameLoop());
+            }
+            
+            bindEvents() {
+                // 键盘控制
+                document.addEventListener('keydown', (e) => {
+                    switch(e.key) {
+                        case 'ArrowUp': case 'w': case 'W':
+                            this.movePlayer(0, -1); break;
+                        case 'ArrowDown': case 's': case 'S':
+                            this.movePlayer(0, 1); break;
+                        case 'ArrowLeft': case 'a': case 'A':
+                            this.movePlayer(-1, 0); break;
+                        case 'ArrowRight': case 'd': case 'D':
+                            this.movePlayer(1, 0); break;
+                    }
+                });
+                
+                // 鼠标点击编辑迷宫
+                this.canvas.addEventListener('click', (e) => {
+                    if (this.isRunning) return;
+                    
+                    const rect = this.canvas.getBoundingClientRect();
+                    const x = Math.floor((e.clientX - rect.left) / this.cellSize);
+                    const y = Math.floor((e.clientY - rect.top) / this.cellSize);
+                    
+                    if (x >= 0 && x < this.cols && y >= 0 && y < this.rows) {
+                        const key = `${x},${y}`;
+                        
+                        if (e.shiftKey) {
+                            // Shift+点击放置/移除能量节点
+                            if (this.energyNodes.has(key)) {
+                                this.energyNodes.delete(key);
+                                this.log(`移除能量节点 (${x}, ${y})`);
+                            } else if (!this.grid[y][x].wall) {
+                                this.energyNodes.add(key);
+                                this.log(`添加能量节点 (${x}, ${y})`);
+                            }
+                        } else {
+                            // 普通点击切换墙壁
+                            if ((x !== 0 || y !== 0) && (x !== 19 || y !== 19)) {
+                                this.grid[y][x].wall = !this.grid[y][x].wall;
+                                this.log(`切换墙壁状态 (${x}, ${y}): ${this.grid[y][x].wall ? '墙' : '路'}`);
+                            }
+                        }
+                    }
+                });
+                
+                // 鼠标悬停提示
+                const tooltip = document.getElementById('tooltip');
+                this.canvas.addEventListener('mousemove', (e) => {
+                    const rect = this.canvas.getBoundingClientRect();
+                    const x = Math.floor((e.clientX - rect.left) / this.cellSize);
+                    const y = Math.floor((e.clientY - rect.top) / this.cellSize);
+                    
+                    if (x >= 0 && x < this.cols && y >= 0 && y < this.rows) {
+                        const cell = this.grid[y][x];
+                        let info = `(${x}, ${y})<br>`;
+                        
+                        if (cell.wall) info += '墙壁';
+                        else {
+                            info += '可通行';
+                            if (cell.distance !== Infinity) {
+                                info += `<br>距离: ${cell.distance.toFixed(1)}`;
+                            }
+                            if (this.energyNodes.has(`${x},${y}`)) {
+                                info += '<br>⚡ 能量节点';
+                            }
+                        }
+                        
+                        tooltip.innerHTML = info;
+                        tooltip.style.display = 'block';
+                        tooltip.style.left = e.clientX + 10 + 'px';
+                        tooltip.style.top = e.clientY + 10 + 'px';
+                    }
+                });
+                
+                this.canvas.addEventListener('mouseleave', () => {
+                    tooltip.style.display = 'none';
+                });
+            }
+            
+            log(message) {
+                const logDiv = document.getElementById('algoLog');
+                const entry = document.createElement('div');
+                entry.className = 'log-entry';
+                entry.innerHTML = `[${new Date().toLocaleTimeString()}] ${message}`;
+                logDiv.appendChild(entry);
+                logDiv.scrollTop = logDiv.scrollHeight;
+                
+                // 限制日志数量
+                while (logDiv.children.length > 50) {
+                    logDiv.removeChild(logDiv.firstChild);
+                }
+            }
+            
+            sleep(ms) {
+                return new Promise(resolve => setTimeout(resolve, ms));
+            }
+        }
+        
+        // 启动游戏
+        const game = new MazeGame();
+    </script>
+</body>
+</html>
