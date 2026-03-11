@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>神经网络前向传播可视化</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Arial', sans-serif;
+        }
+        
+        body {
+            background-color: #f0f5ff;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 1000px;
+            width: 100%;
+        }
+        
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .controls {
+            background-color: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            justify-content: center;
+        }
+        
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        
+        label {
+            color: #34495e;
+            font-weight: bold;
+        }
+        
+        input, button {
+            padding: 8px 12px;
+            border: 1px solid #bdc3c7;
+            border-radius: 5px;
+            font-size: 16px;
+        }
+        
+        button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        
+        button:hover {
+            background-color: #2980b9;
+        }
+        
+        .network {
+            background-color: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .layer {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 15px;
+        }
+        
+        .layer-title {
+            font-size: 18px;
+            font-weight: bold;
+            color: #2c3e50;
+            margin-bottom: 10px;
+        }
+        
+        .neuron {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            background-color: #3498db;
+            color: white;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            font-size: 14px;
+            transition: all 0.5s ease;
+            box-shadow: 0 3px 6px rgba(0,0,0,0.1);
+        }
+        
+        .neuron.active {
+            background-color: #2ecc71;
+            transform: scale(1.1);
+        }
+        
+        .connection {
+            width: 150px;
+            height: 2px;
+            background-color: #95a5a6;
+            position: relative;
+        }
+        
+        .connection-weight {
+            position: absolute;
+            top: -20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: white;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            color: #7f8c8d;
+        }
+        
+        .calculation-log {
+            background-color: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            width: 100%;
+            height: 200px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 14px;
+            line-height: 1.5;
+            color: #2c3e50;
+        }
+        
+        .log-entry {
+            margin-bottom: 8px;
+            padding-left: 10px;
+            border-left: 3px solid transparent;
+        }
+        
+        .log-entry.input {
+            border-left-color: #3498db;
+        }
+        
+        .log-entry.calculation {
+            border-left-color: #f39c12;
+        }
+        
+        .log-entry.output {
+            border-left-color: #2ecc71;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>神经网络前向传播可视化</h1>
+        
+        <div class="controls">
+            <div class="control-group">
+                <label for="input1">输入层神经元1</label>
+                <input type="number" id="input1" value="1.0" step="0.1">
+            </div>
+            <div class="control-group">
+                <label for="input2">输入层神经元2</label>
+                <input type="number" id="input2" value="2.0" step="0.1">
+            </div>
+            <div class="control-group">
+                <label for="bias">偏置值</label>
+                <input type="number" id="bias" value="0.5" step="0.1">
+            </div>
+            <div class="control-group">
+                <label for="activation">激活函数</label>
+                <select id="activation">
+                    <option value="none">无（线性）</option>
+                    <option value="relu">ReLU</option>
+                    <option value="sigmoid">Sigmoid</option>
+                </select>
+            </div>
+            <div class="control-group" style="margin-top: 22px;">
+                <button id="calculate-btn">开始前向传播</button>
+                <button id="reset-btn">重置</button>
+            </div>
+        </div>
+        
+        <div class="network">
+            <!-- 输入层 -->
+            <div class="layer">
+                <div class="layer-title">输入层</div>
+                <div class="neuron" id="input-neuron1">
+                    <span>输入1</span>
+                    <span class="value">1.0</span>
+                </div>
+                <div class="neuron" id="input-neuron2">
+                    <span>输入2</span>
+                    <span class="value">2.0</span>
+                </div>
+            </div>
+            
+            <!-- 连接 -->
+            <div class="connections">
+                <div class="connection">
+                    <div class="connection-weight">w1=0.3</div>
+                </div>
+                <div class="connection">
+                    <div class="connection-weight">w2=0.8</div>
+                </div>
+            </div>
+            
+            <!-- 隐藏层 -->
+            <div class="layer">
+                <div class="layer-title">隐藏层</div>
+                <div class="neuron" id="hidden-neuron">
+                    <span>隐藏神经元</span>
+                    <span class="value">0.0</span>
+                </div>
+            </div>
+            
+            <!-- 连接 -->
+            <div class="connections">
+                <div class="connection">
+                    <div class="connection-weight">w3=0.5</div>
+                </div>
+            </div>
+            
+            <!-- 输出层 -->
+            <div class="layer">
+                <div class="layer-title">输出层</div>
+                <div class="neuron" id="output-neuron">
+                    <span>输出神经元</span>
+                    <span class="value">0.0</span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="calculation-log" id="log-container">
+            <div class="log-entry">📝 点击"开始前向传播"按钮，观察数据流动过程...</div>
+        </div>
+    </div>
+
+    <script>
+        // 权重定义
+        const weights = {
+            w1: 0.3,
+            w2: 0.8,
+            w3: 0.5
+        };
+        
+        // DOM元素
+        const input1El = document.getElementById('input1');
+        const input2El = document.getElementById('input2');
+        const biasEl = document.getElementById('bias');
+        const activationEl = document.getElementById('activation');
+        const calculateBtn = document.getElementById('calculate-btn');
+        const resetBtn = document.getElementById('reset-btn');
+        const logContainer = document.getElementById('log-container');
+        
+        const inputNeuron1 = document.getElementById('input-neuron1');
+        const inputNeuron2 = document.getElementById('input-neuron2');
+        const hiddenNeuron = document.getElementById('hidden-neuron');
+        const outputNeuron = document.getElementById('output-neuron');
+        
+        // 激活函数
+        const activationFunctions = {
+            none: x => x,
+            relu: x => Math.max(0, x),
+            sigmoid: x => 1 / (1 + Math.exp(-x))
+        };
+        
+        // 日志记录函数
+        function log(message, type = 'default') {
+            const logEntry = document.createElement('div');
+            logEntry.className = `log-entry ${type}`;
+            logEntry.textContent = message;
+            logContainer.appendChild(logEntry);
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+        
+        // 重置函数
+        function reset() {
+            // 重置输入值
+            input1El.value = 1.0;
+            input2El.value = 2.0;
+            biasEl.value = 0.5;
+            activationEl.value = 'none';
+            
+            // 重置神经元显示
+            inputNeuron1.querySelector('.value').textContent = '1.0';
+            inputNeuron2.querySelector('.value').textContent = '2.0';
+            hiddenNeuron.querySelector('.value').textContent = '0.0';
+            outputNeuron.querySelector('.value').textContent = '0.0';
+            
+            // 移除激活状态
+            [inputNeuron1, inputNeuron2, hiddenNeuron, outputNeuron].forEach(neuron => {
+                neuron.classList.remove('active');
+            });
+            
+            // 清空日志
+            logContainer.innerHTML = '<div class="log-entry">📝 点击"开始前向传播"按钮，观察数据流动过程...</div>';
+        }
+        
+        // 前向传播主函数
+        async function forwardPropagation() {
+            // 清空日志
+            logContainer.innerHTML = '';
+            
+            // 获取输入值
+            const input1 = parseFloat(input1El.value);
+            const input2 = parseFloat(input2El.value);
+            const bias = parseFloat(biasEl.value);
+            const activationType = activationEl.value;
+            const activationFunc = activationFunctions[activationType];
+            
+            // 验证输入
+            if (isNaN(input1) || isNaN(input2) || isNaN(bias)) {
+                log('❌ 请输入有效的数字！', 'calculation');
+                return;
+            }
+            
+            // 步骤1：显示输入层数据
+            log(`🔹 步骤1：输入层数据`, 'input');
+            log(`   输入神经元1 = ${input1}`, 'input');
+            log(`   输入神经元2 = ${input2}`, 'input');
+            
+            inputNeuron1.querySelector('.value').textContent = input1.toFixed(2);
+            inputNeuron2.querySelector('.value').textContent = input2.toFixed(2);
+            
+            // 高亮输入层
+            inputNeuron1.classList.add('active');
+            inputNeuron2.classList.add('active');
+            await sleep(1000);
+            
+            // 步骤2：计算隐藏层（加权求和 + 偏置 + 激活函数）
+            log(`\n🔹 步骤2：计算隐藏层`, 'calculation');
+            const hiddenSum = input1 * weights.w1 + input2 * weights.w2 + bias;
+            log(`   加权求和: (${input1} × ${weights.w1}) + (${input2} × ${weights.w2}) + ${bias} = ${hiddenSum.toFixed(4)}`, 'calculation');
+            
+            const hiddenActivated = activationFunc(hiddenSum);
+            log(`   ${activationType.toUpperCase()}激活: ${activationType === 'none' ? '无激活' : `${activationType}(${hiddenSum.toFixed(4)})`} = ${hiddenActivated.toFixed(4)}`, 'calculation');
+            
+            // 更新隐藏层显示
+            hiddenNeuron.querySelector('.value').textContent = hiddenActivated.toFixed(4);
+            hiddenNeuron.classList.add('active');
+            // 取消输入层高亮
+            inputNeuron1.classList.remove('active');
+            inputNeuron2.classList.remove('active');
+            await sleep(1000);
+            
+            // 步骤3：计算输出层
+            log(`\n🔹 步骤3：计算输出层`, 'output');
+            const outputSum = hiddenActivated * weights.w3;
+            const output = activationFunc(outputSum);
+            log(`   加权求和: ${hiddenActivated.toFixed(4)} × ${weights.w3} = ${outputSum.toFixed(4)}`, 'output');
+            log(`   ${activationType.toUpperCase()}激活: ${activationType === 'none' ? '无激活' : `${activationType}(${outputSum.toFixed(4)})`} = ${output.toFixed(4)}`, 'output');
+            log(`\n✅ 前向传播完成！最终输出 = ${output.toFixed(4)}`, 'output');
+            
+            // 更新输出层显示
+            outputNeuron.querySelector('.value').textContent = output.toFixed(4);
+            outputNeuron.classList.add('active');
+            // 取消隐藏层高亮
+            hiddenNeuron.classList.remove('active');
+            await sleep(1000);
+            
+            // 最终状态
+            outputNeuron.classList.remove('active');
+        }
+        
+        // 睡眠函数（用于控制动画节奏）
+        function sleep(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+        
+        // 事件监听
+        calculateBtn.addEventListener('click', forwardPropagation);
+        resetBtn.addEventListener('click', reset);
+        
+        // 初始化
+        reset();
+    </script>
+</body>
+</html>
