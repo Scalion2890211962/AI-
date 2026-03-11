@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>决策边界可视化 H5 游戏</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: Arial, sans-serif;
+        }
+        
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #f0f2f5;
+            padding: 20px;
+        }
+        
+        .game-container {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            padding: 20px;
+            width: 800px;
+            max-width: 100%;
+        }
+        
+        .game-header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        
+        .game-header h1 {
+            color: #1877f2;
+            margin-bottom: 10px;
+        }
+        
+        .game-controls {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+        
+        .control-btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.2s;
+        }
+        
+        .btn-red {
+            background-color: #ff4d4f;
+            color: white;
+        }
+        
+        .btn-blue {
+            background-color: #1877f2;
+            color: white;
+        }
+        
+        .btn-reset {
+            background-color: #666;
+            color: white;
+        }
+        
+        .btn-model {
+            background-color: #52c41a;
+            color: white;
+        }
+        
+        .control-btn:hover {
+            opacity: 0.9;
+            transform: scale(1.05);
+        }
+        
+        #canvas {
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            background-color: #fafafa;
+            cursor: crosshair;
+        }
+        
+        .game-stats {
+            margin-top: 15px;
+            display: flex;
+            justify-content: space-around;
+            font-size: 14px;
+        }
+        
+        .stat-item {
+            padding: 5px 10px;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+        }
+        
+        .game-instructions {
+            margin-top: 15px;
+            font-size: 13px;
+            color: #666;
+            line-height: 1.5;
+        }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <div class="game-header">
+            <h1>决策边界小游戏</h1>
+            <p>点击画布添加样本点，看看模型的决策边界如何变化！</p>
+        </div>
+        
+        <div class="game-controls">
+            <button class="control-btn btn-red" id="btn-red">添加红色点 (类别 0)</button>
+            <button class="control-btn btn-blue" id="btn-blue">添加蓝色点 (类别 1)</button>
+            <button class="control-btn btn-model" id="btn-svm">使用 SVM 模型</button>
+            <button class="control-btn btn-model" id="btn-logistic">使用逻辑回归</button>
+            <button class="control-btn btn-reset" id="btn-reset">重置画布</button>
+        </div>
+        
+        <canvas id="canvas" width="750" height="500"></canvas>
+        
+        <div class="game-stats">
+            <div class="stat-item">已添加点数量: <span id="point-count">0</span></div>
+            <div class="stat-item">模型准确率: <span id="accuracy">0%</span></div>
+            <div class="stat-item">当前模型: <span id="current-model">逻辑回归</span></div>
+        </div>
+        
+        <div class="game-instructions">
+            <strong>游戏规则：</strong>
+            1. 先选择要添加的点颜色，然后点击画布添加样本点
+            2. 可以切换不同的分类模型（SVM/逻辑回归）
+            3. 决策边界会实时更新，显示模型如何区分两类点
+            4. 尝试用最少的点让模型准确率达到 100%！
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/ml@8.0.0/dist/ml.min.js"></script>
+    <script>
+        // 获取DOM元素
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const btnRed = document.getElementById('btn-red');
+        const btnBlue = document.getElementById('btn-blue');
+        const btnSvm = document.getElementById('btn-svm');
+        const btnLogistic = document.getElementById('btn-logistic');
+        const btnReset = document.getElementById('btn-reset');
+        const pointCount = document.getElementById('point-count');
+        const accuracy = document.getElementById('accuracy');
+        const currentModel = document.getElementById('current-model');
+
+        // 游戏状态
+        const gameState = {
+            selectedClass: 0, // 0: 红色, 1: 蓝色
+            points: [], // 存储所有点 {x, y, label}
+            modelType: 'logistic', // 逻辑回归 / svm
+            model: null, // 存储训练好的模型
+            canvasWidth: canvas.width,
+            canvasHeight: canvas.height
+        };
+
+        // 初始化画布
+        function initCanvas() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            // 绘制网格背景
+            drawGrid();
+            // 重置状态
+            gameState.points = [];
+            gameState.model = null;
+            updateStats();
+        }
+
+        // 绘制网格
+        function drawGrid() {
+            ctx.strokeStyle = '#eee';
+            ctx.lineWidth = 1;
+            
+            // 绘制竖线
+            for (let x = 0; x <= canvas.width; x += 50) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, canvas.height);
+                ctx.stroke();
+            }
+            
+            // 绘制横线
+            for (let y = 0; y <= canvas.height; y += 50) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(canvas.width, y);
+                ctx.stroke();
+            }
+            
+            // 绘制坐标轴
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 2;
+            // X轴
+            ctx.beginPath();
+            ctx.moveTo(0, canvas.height/2);
+            ctx.lineTo(canvas.width, canvas.height/2);
+            ctx.stroke();
+            // Y轴
+            ctx.beginPath();
+            ctx.moveTo(canvas.width/2, 0);
+            ctx.lineTo(canvas.width/2, canvas.height);
+            ctx.stroke();
+        }
+
+        // 添加点到画布
+        function addPoint(x, y) {
+            // 存储点的坐标和标签
+            gameState.points.push({
+                x: x,
+                y: y,
+                label: gameState.selectedClass
+            });
+            
+            // 绘制点
+            drawPoint(x, y, gameState.selectedClass);
+            
+            // 训练模型并绘制决策边界
+            trainModel();
+            drawDecisionBoundary();
+            
+            // 更新统计信息
+            updateStats();
+        }
+
+        // 绘制单个点
+        function drawPoint(x, y, label) {
+            ctx.beginPath();
+            ctx.arc(x, y, 8, 0, Math.PI * 2);
+            ctx.fillStyle = label === 0 ? '#ff4d4f' : '#1877f2';
+            ctx.fill();
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+
+        // 训练分类模型
+        function trainModel() {
+            // 至少需要2个不同类别的点才能训练
+            if (gameState.points.length < 2) {
+                gameState.model = null;
+                return;
+            }
+            
+            // 检查是否有至少两个不同类别的点
+            const hasBothClasses = gameState.points.some(p => p.label === 0) && 
+                                   gameState.points.some(p => p.label === 1);
+            if (!hasBothClasses) {
+                gameState.model = null;
+                return;
+            }
+            
+            // 准备训练数据
+            const features = gameState.points.map(p => [
+                (p.x - canvas.width/2) / canvas.width,  // 归一化X坐标
+                (p.y - canvas.height/2) / canvas.height // 归一化Y坐标
+            ]);
+            const labels = gameState.points.map(p => p.label);
+            
+            try {
+                // 根据选择的模型类型训练
+                if (gameState.modelType === 'logistic') {
+                    // 逻辑回归
+                    gameState.model = new ml.LogisticRegression({
+                        inputSize: 2,
+                        outputSize: 2,
+                        learningRate: 0.1,
+                        iterations: 100,
+                        lambda: 0.01
+                    });
+                    gameState.model.train(features, labels);
+                } else if (gameState.modelType === 'svm') {
+                    // 支持向量机
+                    gameState.model = new ml.SVM({
+                        kernel: 'linear',
+                        C: 1.0
+                    });
+                    gameState.model.train(features, labels);
+                }
+            } catch (e) {
+                console.error('模型训练失败:', e);
+                gameState.model = null;
+            }
+        }
+
+        // 绘制决策边界
+        function drawDecisionBoundary() {
+            if (!gameState.model) return;
+            
+            // 保存当前画布状态
+            ctx.save();
+            
+            // 创建像素级的决策边界
+            const imageData = ctx.createImageData(canvas.width, canvas.height);
+            const data = imageData.data;
+            
+            // 遍历每个像素
+            for (let y = 0; y < canvas.height; y++) {
+                for (let x = 0; x < canvas.width; x++) {
+                    // 归一化坐标
+                    const normalizedX = (x - canvas.width/2) / canvas.width;
+                    const normalizedY = (y - canvas.height/2) / canvas.height;
+                    
+                    // 预测类别
+                    let prediction = 0;
+                    try {
+                        if (gameState.modelType === 'logistic') {
+                            prediction = gameState.model.predict([normalizedX, normalizedY])[0];
+                        } else if (gameState.modelType === 'svm') {
+                            prediction = gameState.model.predict([normalizedX, normalizedY]);
+                        }
+                    } catch (e) {
+                        prediction = 0;
+                    }
+                    
+                    // 设置像素颜色（半透明的决策区域）
+                    const idx = (y * canvas.width + x) * 4;
+                    if (prediction === 0) {
+                        // 红色区域（类别0）
+                        data[idx] = 255;     // R
+                        data[idx + 1] = 77;   // G
+                        data[idx + 2] = 79;   // B
+                        data[idx + 3] = 30;   // Alpha
+                    } else {
+                        // 蓝色区域（类别1）
+                        data[idx] = 24;      // R
+                        data[idx + 1] = 119;  // G
+                        data[idx + 2] = 242;  // B
+                        data[idx + 3] = 30;   // Alpha
+                    }
+                }
+            }
+            
+            // 清除画布并重绘
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawGrid();
+            
+            // 绘制决策区域
+            ctx.putImageData(imageData, 0, 0);
+            
+            // 重新绘制所有点
+            gameState.points.forEach(p => drawPoint(p.x, p.y, p.label));
+            
+            // 恢复画布状态
+            ctx.restore();
+        }
+
+        // 更新统计信息
+        function updateStats() {
+            // 更新点数量
+            pointCount.textContent = gameState.points.length;
+            
+            // 计算并更新准确率
+            let acc = 0;
+            if (gameState.model && gameState.points.length > 0) {
+                let correct = 0;
+                gameState.points.forEach(p => {
+                    const normalizedX = (p.x - canvas.width/2) / canvas.width;
+                    const normalizedY = (p.y - canvas.height/2) / canvas.height;
+                    
+                    let pred = 0;
+                    try {
+                        if (gameState.modelType === 'logistic') {
+                            pred = gameState.model.predict([normalizedX, normalizedY])[0];
+                        } else if (gameState.modelType === 'svm') {
+                            pred = gameState.model.predict([normalizedX, normalizedY]);
+                        }
+                        if (pred === p.label) correct++;
+                    } catch (e) {
+                        // 预测失败时不计入
+                    }
+                });
+                acc = Math.round((correct / gameState.points.length) * 100);
+            }
+            accuracy.textContent = `${acc}%`;
+            
+            // 更新当前模型
+            currentModel.textContent = gameState.modelType === 'logistic' ? '逻辑回归' : '支持向量机';
+        }
+
+        // 事件监听
+        // 选择添加红色点
+        btnRed.addEventListener('click', () => {
+            gameState.selectedClass = 0;
+            btnRed.style.border = '2px solid #fff';
+            btnBlue.style.border = 'none';
+        });
+
+        // 选择添加蓝色点
+        btnBlue.addEventListener('click', () => {
+            gameState.selectedClass = 1;
+            btnBlue.style.border = '2px solid #fff';
+            btnRed.style.border = 'none';
+        });
+
+        // 切换到SVM模型
+        btnSvm.addEventListener('click', () => {
+            gameState.modelType = 'svm';
+            currentModel.textContent = '支持向量机';
+            // 重新训练并绘制
+            trainModel();
+            drawDecisionBoundary();
+            updateStats();
+        });
+
+        // 切换到逻辑回归
+        btnLogistic.addEventListener('click', () => {
+            gameState.modelType = 'logistic';
+            currentModel.textContent = '逻辑回归';
+            // 重新训练并绘制
+            trainModel();
+            drawDecisionBoundary();
+            updateStats();
+        });
+
+        // 重置画布
+        btnReset.addEventListener('click', initCanvas);
+
+        // 画布点击添加点
+        canvas.addEventListener('click', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            addPoint(x, y);
+        });
+
+        // 初始化游戏
+        window.addEventListener('load', () => {
+            initCanvas();
+            // 默认选中红色点
+            btnRed.style.border = '2px solid #fff';
+        });
+    </script>
+</body>
+</html>
